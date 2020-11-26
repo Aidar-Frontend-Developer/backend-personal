@@ -7,6 +7,7 @@
 
 const chalk = require('chalk');
 
+/* eslint-disable */
 module.exports = async function() {
     console.log(chalk.green('λ'));
     global.t = 'hello';

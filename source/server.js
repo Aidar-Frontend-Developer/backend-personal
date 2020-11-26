@@ -1,33 +1,21 @@
 // Core
 import express from 'express';
 import session from 'express-session';
-import mongoose from 'mongoose';
-import connectMongo from 'connect-mongo';
-import bodyParser from 'body-parser';
+import helmet from 'helmet';
+import cors from 'cors';
 import dg from 'debug';
 
-// Instruments
-import { getPassword, NotFoundError } from './helpers';
+// Routes
+import * as domains from './domains';
 
-// Initialize DB connection
-import './db';
+// Instruments
+import { requireJsonContent, NotFoundError, errorLogger } from './helpers';
+
+// Config
+import { corsOptions, sessionOptions } from './config';
 
 const app = express();
 const debug = dg('server:init');
-const MongoStore = connectMongo(session);
-
-const sessionOptions = {
-    key:               'user',
-    secret:            getPassword(),
-    resave:            false,
-    rolling:           true,
-    saveUninitialized: false,
-    store:             new MongoStore({ mongooseConnection: mongoose.connection }),
-    cookie:            {
-        httpOnly: true,
-        maxAge:   15 * 60 * 1000,
-    },
-};
 
 // change cookie max age for development
 if (process.env.NODE_ENV === 'development') {
@@ -39,24 +27,30 @@ if (process.env.NODE_ENV === 'production') {
     sessionOptions.cookie.secure = true;
 }
 
+app.use(helmet());
+app.use(cors(corsOptions));
 app.use(
-    bodyParser.json({
-        limit: '5kb',
+    express.json({
+        limit: '10kb',
     }),
 );
 app.use(session(sessionOptions));
+app.use(requireJsonContent);
 
 if (process.env.NODE_ENV === 'development') {
     app.use((req, res, next) => {
-        const body
-            = req.method === 'GET'
-                ? 'Body not supported for GET'
-                : JSON.stringify(req.body, null, 2);
+        const body = req.method === 'GET' ? 'Body not supported for GET' : JSON.stringify(req.body, null, 2);
 
         debug(`${req.method}\n${body}`);
         next();
     });
 }
+
+app.use('/api/auth', domains.auth);
+app.use('/api/staff', domains.staff);
+app.use('/api/customers', domains.customers);
+app.use('/api/products', domains.products);
+app.use('/api/orders', domains.orders);
 
 app.use('*', (req, res, next) => {
     const error = new NotFoundError(
@@ -78,5 +72,14 @@ if (process.env.NODE_ENV !== 'test') {
         res.status(status).json({ message: message });
     });
 }
+
+// eslint-disable-next-line no-unused-vars
+process.on('unhandledRejection', (error, promise) => {
+    errorLogger.error(`${new Date().toISOString()} ${error.name}: ${error.message}`);
+});
+
+process.on('uncaughtException', (error) => {
+    errorLogger.error(`${new Date().toISOString()} ${error.name}: ${error.message}`);
+});
 
 export { app };
